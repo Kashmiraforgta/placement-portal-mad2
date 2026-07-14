@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Placement Portal</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- Bootstrap (styling only, per project rules) -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+
+  <!-- Vue 3 (CDN, no build step) -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <!-- Chart.js (CDN, per project allowed external libraries) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+  {% raw %}
+  <div id="app">
+    <!-- top nav -->
+    <nav class="navbar navbar-dark bg-dark px-3 shadow-sm" v-if="user">
+      <span class="navbar-brand mb-0">
+        🎓 Placement Portal
+        <span class="badge bg-light text-dark ms-2 text-capitalize">{{ user.role }}</span>
+      </span>
+      <button class="btn btn-outline-light btn-sm" @click="logout">Logout</button>
+    </nav>
+
+    <div :class="user ? 'container mt-4' : 'auth-wrapper'">
+      <component
+        :is="currentView"
+        :user="user"
+        :prefill-email="prefillEmail"
+        :flash="flashMessage"
+        @login-success="onLogin"
+        @registered="onRegistered">
+      </component>
+    </div>
+  </div>
+
+  <!-- ================= TEMPLATES ================= -->
+
+  <template id="tpl-login">
+    <div class="auth-card card shadow-sm">
+      <div class="card-body p-4">
+        <h3 class="mb-1">Welcome back</h3>
+        <p class="text-muted small mb-3">Log in to your Placement Portal account</p>
+
+        <div class="alert alert-success py-2 small" v-if="flash">{{ flash }}</div>
+
+        <form @submit.prevent="submit">
+          <div class="mb-2">
+            <input v-model="email" type="email" class="form-control" placeholder="Email" required autofocus>
+          </div>
+          <div class="mb-2">
+            <input v-model="password" type="password" class="form-control" placeholder="Password" required>
+          </div>
+          <div class="text-danger small mb-2" v-if="error">{{ error }}</div>
+          <button class="btn btn-primary w-100" type="submit" :disabled="loading">
+            {{ loading ? 'Logging in...' : 'Login' }}
+          </button>
+        </form>
+        <p class="mt-3 small text-center mb-0">
+          No account? <a href="#" @click.prevent="$parent.currentView='register-view'">Register</a>
+        </p>
+      </div>
+    </div>
+  </template>
+
+  <template id="tpl-register">
+    <div class="auth-card card shadow-sm">
+      <div class="card-body p-4">
+        <h3 class="mb-1">Create an account</h3>
+        <p class="text-muted small mb-3">Students and companies can register here</p>
+
+        <form @submit.prevent="submit">
+          <div class="mb-2">
+            <div class="btn-group w-100" role="group">
+              <input type="radio" class="btn-check" id="role-student" value="student" v-model="role">
+              <label class="btn btn-outline-primary" for="role-student">Student</label>
+              <input type="radio" class="btn-check" id="role-company" value="company" v-model="role">
+              <label class="btn btn-outline-primary" for="role-company">Company</label>
+            </div>
+          </div>
+          <div class="mb-2">
+            <input v-model="name" class="form-control" :placeholder="role==='student' ? 'Full name' : 'Company name'" required>
+          </div>
+          <div class="mb-2">
+            <input v-model="email" type="email" class="form-control" placeholder="Email" required>
+          </div>
+          <div class="mb-2">
+            <input v-model="password" type="password" class="form-control" placeholder="Password (min 6 chars)" minlength="6" required>
+          </div>
+          <div class="text-danger small mb-2" v-if="error">{{ error }}</div>
+          <button class="btn btn-primary w-100" type="submit" :disabled="loading">
+            {{ loading ? 'Creating account...' : 'Register' }}
+          </button>
+        </form>
+        <p class="mt-3 small text-center mb-0">
+          Already have an account? <a href="#" @click.prevent="$parent.currentView='login-view'">Login</a>
+        </p>
+      </div>
+    </div>
+  </template>
+
+  <template id="tpl-admin-dashboard">
+    <div>
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3 class="mb-0">Admin Dashboard</h3>
+        <div class="btn-group btn-group-sm" role="group">
+          <button :class="['btn', adminTab==='overview' ? 'btn-dark' : 'btn-outline-dark']" @click="adminTab='overview'">Overview</button>
+          <button :class="['btn', adminTab==='applications' ? 'btn-dark' : 'btn-outline-dark']" @click="loadAllApplications">Applications</button>
+          <button :class="['btn', adminTab==='students' ? 'btn-dark' : 'btn-outline-dark']" @click="loadStudents">Students</button>
+          <button :class="['btn', adminTab==='search' ? 'btn-dark' : 'btn-outline-dark']" @click="adminTab='search'">Search</button>
+        </div>
+      </div>
+
+      <!-- ── Overview tab ── -->
+      <div v-if="adminTab==='overview'">
+        <div class="row text-center g-3 mb-4">
+          <div class="col"><div class="card p-3"><h4 class="mb-0">{{ stats.total_students ?? '-' }}</h4><small class="text-muted">Students</small></div></div>
+          <div class="col"><div class="card p-3"><h4 class="mb-0">{{ stats.total_companies ?? '-' }}</h4><small class="text-muted">Companies</small></div></div>
+          <div class="col"><div class="card p-3"><h4 class="mb-0">{{ stats.total_drives ?? '-' }}</h4><small class="text-muted">Drives</small></div></div>
+          <div class="col"><div class="card p-3"><h4 class="mb-0">{{ stats.total_applications ?? '-' }}</h4><small class="text-muted">Applications</small></div></div>
+          <div class="col"><div class="card p-3 bg-success text-white"><h4 class="mb-0">{{ stats.total_selected ?? '-' }}</h4><small>Selected</small></div></div>
+        </div>
+
+        <!-- Charts row -->
+        <div class="row g-3 mb-4">
+          <div class="col-md-5">
+            <div class="card h-100">
+              <div class="card-header fw-semibold small">Application Status Breakdown</div>
+              <div class="card-body d-flex align-items-center justify-content-center" style="max-height:220px">
+                <canvas id="statusChart"></canvas>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="card h-100">
+              <div class="card-header fw-semibold small">Company Approval Status</div>
+              <div class="card-body d-flex align-items-center justify-content-center" style="max-height:220px">
+                <canvas id="companyChart"></canvas>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="card h-100">
+              <div class="card-header fw-semibold small">Top Drives by Applicants</div>
+              <div class="card-body" style="max-height:220px;overflow-y:auto">
+                <canvas id="driveChart"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card mb-4">
+          <div class="card-header fw-semibold">Pending Company Approvals</div>
+          <div class="card-body p-0">
+            <table class="table table-sm mb-0">
+              <thead><tr><th>Name</th><th>HR Contact</th><th>Website</th><th>Status</th><th class="text-end">Action</th></tr></thead>
+              <tbody>
+                <tr v-for="c in companies" :key="c.id">
+                  <td>{{ c.name }}</td>
+                  <td class="text-muted small">{{ c.hr_contact || '—' }}</td>
+                  <td class="text-muted small">{{ c.website || '—' }}</td>
+                  <td><span :class="badgeClass(c.approval_status)">{{ c.approval_status }}</span></td>
+                  <td class="text-end">
+                    <button class="btn btn-sm btn-success me-1" @click="setCompanyStatus(c.id,'approved')">Approve</button>
+                    <button class="btn btn-sm btn-outline-danger" @click="setCompanyStatus(c.id,'rejected')">Reject</button>
+                  </td>
+                </tr>
+                <tr v-if="!companies.length"><td colspan="5" class="text-center text-muted py-3">No pending companies 🎉</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header fw-semibold">Pending Drive Approvals</div>
+          <div class="card-body p-0">
+            <table class="table table-sm mb-0">
+              <thead><tr><th>Title</th><th>Company</th><th>Deadline</th><th>Status</th><th class="text-end">Action</th></tr></thead>
+              <tbody>
+                <tr v-for="d in drives" :key="d.id">
+                  <td>{{ d.job_title }}</td>
+                  <td>{{ d.company_name }}</td>
+                  <td class="text-muted small">{{ d.application_deadline ? d.application_deadline.slice(0,10) : '—' }}</td>
+                  <td><span :class="badgeClass(d.status)">{{ d.status }}</span></td>
+                  <td class="text-end">
+                    <button class="btn btn-sm btn-success me-1" @click="setDriveStatus(d.id,'approved')">Approve</button>
+                    <button class="btn btn-sm btn-outline-secondary" @click="setDriveStatus(d.id,'closed')">Close</button>
+                  </td>
+                </tr>
+                <tr v-if="!drives.length"><td colspan="5" class="text-center text-muted py-3">No pending drives 🎉</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── All Applications tab ── -->
+      <div v-if="adminTab==='applications'">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <h5 class="mb-0">All Applications</h5>
+          <select class="form-select form-select-sm w-auto" v-model="appFilter" @change="loadAllApplications">
+            <option value="">All statuses</option>
+            <option value="applied">Applied</option>
+            <option value="shortlisted">Shortlisted</option>
+            <option value="selected">Selected</option>
+            <option value="rejected">Rejected</option>
+          </select>
+        </div>
+        <div class="card">
+          <div class="card-body p-0">
+            <table class="table table-sm mb-0">
+              <thead><tr><th>Student</th><th>Company</th><th>Drive</th><th>Status</th><th>Applied</th><th>Interview</th></tr></thead>
+              <tbody>
+                <tr v-for="a in allApplications" :key="a.id">
+                  <td>{{ a.student_name }}</td>
+                  <td>{{ a.company_name }}</td>
+                  <td>{{ a.job_title }}</td>
+                  <td><span :class="badgeClass(a.status)">{{ a.status }}</span></td>
+                  <td class="text-muted small">{{ a.applied_at?.slice(0,10) }}</td>
+                  <td class="text-muted small">{{ a.interview_date ? a.interview_date.slice(0,10) : '—' }}</td>
+                </tr>
+                <tr v-if="!allApplications.length"><td colspan="6" class="text-center text-muted py-3">No applications found.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Students tab ── -->
+      <div v-if="adminTab==='students'">
+        <h5 class="mb-2">All Students</h5>
+        <div class="card">
+          <div class="card-body p-0">
+            <table class="table table-sm mb-0">
+              <thead><tr><th>ID</th><th>Name</th><th>Email</th><th>Branch</th><th>CGPA</th><th>Year</th><th class="text-end">Action</th></tr></thead>
+              <tbody>
+                <tr v-for="s in allStudents" :key="s.id">
+                  <td class="text-muted small">{{ s.id }}</td>
+                  <td>{{ s.name }}</td>
+                  <td class="text-muted small">{{ s.email }}</td>
+                  <td>{{ s.branch || '—' }}</td>
+                  <td>{{ s.cgpa || '—' }}</td>
+                  <td>{{ s.year || '—' }}</td>
+                  <td class="text-end">
+                    <button class="btn btn-sm btn-outline-danger" @click="blacklistUser(s.id)">Toggle Blacklist</button>
+                  </td>
+                </tr>
+                <tr v-if="!allStudents.length"><td colspan="7" class="text-center text-muted py-3">No students registered yet.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Search tab ── -->
+      <div v-if="adminTab==='search'">
+        <h5 class="mb-2">Search Students &amp; Companies</h5>
+        <form class="input-group mb-3" @submit.prevent="runSearch">
+          <input v-model="searchQuery" class="form-control" placeholder="Name, ID, email or company name" required>
+          <button class="btn btn-primary" type="submit">Search</button>
+        </form>
+        <div v-if="searchResults">
+          <div class="card mb-3" v-if="searchResults.students.length">
+            <div class="card-header fw-semibold">Students ({{ searchResults.students.length }})</div>
+            <div class="card-body p-0">
+              <table class="table table-sm mb-0">
+                <thead><tr><th>ID</th><th>Name</th><th>Email</th><th>Branch</th><th>CGPA</th></tr></thead>
+                <tbody>
+                  <tr v-for="s in searchResults.students" :key="s.id">
+                    <td class="text-muted small">{{ s.id }}</td>
+                    <td>{{ s.name }}</td>
+                    <td class="text-muted small">{{ s.email }}</td>
+                    <td>{{ s.branch || '—' }}</td>
+                    <td>{{ s.cgpa || '—' }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="card" v-if="searchResults.companies.length">
+            <div class="card-header fw-semibold">Companies ({{ searchResults.companies.length }})</div>
+            <div class="card-body p-0">
+              <table class="table table-sm mb-0">
+                <thead><tr><th>Name</th><th>HR Contact</th><th>Website</th><th>Status</th></tr></thead>
+                <tbody>
+                  <tr v-for="c in searchResults.companies" :key="c.id">
+                    <td>{{ c.name }}</td>
+                    <td class="text-muted small">{{ c.hr_contact || '—' }}</td>
+                    <td class="text-muted small">{{ c.website || '—' }}</td>
+                    <td><span :class="badgeClass(c.approval_status)">{{ c.approval_status }}</span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <p v-if="!searchResults.students.length && !searchResults.companies.length" class="text-muted">No results found.</p>
+        </div>
+      </div>
+    </div>
+  </template>
+
+  <template id="tpl-company-dashboard">
+    <div>
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3 class="mb-0">{{ profile.name }}
+          <span class="ms-2"><span :class="badgeClass(profile.approval_status)" style="font-size:0.6em">{{ profile.approval_status }}</span></span>
+        </h3>
+        <div class="btn-group btn-group-sm">
+          <button :class="['btn', companyTab==='drives' ? 'btn-dark' : 'btn-outline-dark']" @click="companyTab='drives'">Drives</button>
+          <button :class="['btn', companyTab==='profile' ? 'btn-dark' : 'btn-outline-dark']" @click="companyTab='profile'">Edit Profile</button>
+        </div>
+      </div>
+      <div class="alert alert-warning small" v-if="profile.approval_status !== 'approved'">
+        Your company registration is pending admin approval. You can browse the portal, but drive creation is locked until approved.
+      </div>
+
+      <div class="card mb-4">
+        <div class="card-header fw-semibold">Create a New Drive</div>
+        <div class="card-body">
+          <form class="row g-2" @submit.prevent="createDrive">
+            <div class="col-md-3"><input v-model="newDrive.job_title" class="form-control" placeholder="Job title" required></div>
+            <div class="col-md-2"><input v-model="newDrive.eligibility_branch" class="form-control" placeholder="Eligible branch(es)"></div>
+            <div class="col-md-2"><input v-model.number="newDrive.eligibility_cgpa" type="number" step="0.1" class="form-control" placeholder="Min CGPA"></div>
+            <div class="col-md-2"><input v-model.number="newDrive.eligibility_year" type="number" class="form-control" placeholder="Year (optional)"></div>
+            <div class="col-md-2"><input v-model="newDrive.application_deadline" type="date" class="form-control"></div>
+            <div class="col-md-1"><button class="btn btn-primary w-100" type="submit" :disabled="profile.approval_status!=='approved'">Add</button></div>
+          </form>
+          <div class="text-danger small mt-1" v-if="driveError">{{ driveError }}</div>
+        </div>
+      </div>
+
+      <div class="card mb-4">
+        <div class="card-header fw-semibold">My Drives</div>
+        <div class="card-body p-0">
+          <table class="table table-sm mb-0">
+            <thead><tr><th>Title</th><th>Deadline</th><th>Status</th><th>Applicants</th><th class="text-end">Action</th></tr></thead>
+            <tbody>
+              <tr v-for="d in drives" :key="d.id">
+                <td>{{ d.job_title }}</td>
+                <td class="text-muted small">{{ d.application_deadline ? d.application_deadline.slice(0,10) : '—' }}</td>
+                <td><span :class="badgeClass(d.status)">{{ d.status }}</span></td>
+                <td><span class="badge bg-secondary">{{ d.applicant_count ?? 0 }}</span></td>
+                <td class="text-end"><button class="btn btn-sm btn-outline-primary" @click="viewApplicants(d.id)">View Applicants</button></td>
+              </tr>
+              <tr v-if="!drives.length"><td colspan="5" class="text-center text-muted py-3">No drives yet — create one above.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Drives content (only shown on drives tab) -->
+      <div v-if="companyTab==='drives'">
+        <div class="card" v-if="applicantsFor !== null">
+          <div class="card-header d-flex justify-content-between align-items-center fw-semibold">
+            <span>Applicants for Drive #{{ applicantsFor }}</span>
+            <button class="btn btn-sm btn-outline-secondary" @click="applicantsFor=null">Close</button>
+          </div>
+          <div class="card-body p-0">
+            <table class="table table-sm mb-0">
+              <thead><tr><th>Student</th><th>Branch</th><th>Status</th><th>Interview Date</th><th class="text-end">Actions</th></tr></thead>
+              <tbody>
+                <tr v-for="a in applicants" :key="a.id">
+                  <td>{{ a.student_name }}</td>
+                  <td class="text-muted small">{{ a.student_branch || '—' }}</td>
+                  <td><span :class="badgeClass(a.status)">{{ a.status }}</span></td>
+                  <td class="text-muted small">{{ a.interview_date ? a.interview_date.slice(0,10) : '—' }}</td>
+                  <td class="text-end">
+                    <select class="form-select form-select-sm d-inline-block w-auto me-1" @change="updateApplication(a.id, $event.target.value)">
+                      <option value="">Update status...</option>
+                      <option value="shortlisted">Shortlisted</option>
+                      <option value="selected">Selected</option>
+                      <option value="rejected">Rejected</option>
+                    </select>
+                    <input type="date" class="form-control form-control-sm d-inline-block w-auto me-1" v-model="interviewDates[a.id]">
+                    <button class="btn btn-sm btn-outline-info" @click="scheduleInterview(a.id)">Set Interview</button>
+                  </td>
+                </tr>
+                <tr v-if="!applicants.length"><td colspan="5" class="text-center text-muted py-3">No applicants yet.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Profile edit tab -->
+      <div v-if="companyTab==='profile'">
+        <div class="row g-4">
+          <div class="col-md-6">
+            <div class="card">
+              <div class="card-header fw-semibold">Edit Company Profile</div>
+              <div class="card-body">
+                <form @submit.prevent="saveProfile">
+                  <div class="mb-2">
+                    <label class="form-label small">Company Name <span class="text-danger">*</span></label>
+                    <input v-model="editProfile.name" class="form-control" required minlength="2">
+                  </div>
+                  <div class="mb-2">
+                    <label class="form-label small">HR Contact (phone or email)</label>
+                    <input v-model="editProfile.hr_contact" class="form-control" placeholder="e.g. hr@company.com">
+                  </div>
+                  <div class="mb-3">
+                    <label class="form-label small">Website</label>
+                    <input v-model="editProfile.website" class="form-control" type="url" placeholder="https://company.com">
+                  </div>
+                  <div class="text-danger small mb-2" v-if="profileError">{{ profileError }}</div>
+                  <div class="text-success small mb-2" v-if="profileMsg">{{ profileMsg }}</div>
+                  <button class="btn btn-primary" type="submit">Save Changes</button>
+                </form>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="card">
+              <div class="card-header fw-semibold">Account Info</div>
+              <div class="card-body">
+                <div class="mb-2"><span class="fw-semibold">Company Name:</span> {{ profile.name }}</div>
+                <div class="mb-2"><span class="fw-semibold">HR Contact:</span> {{ profile.hr_contact || '—' }}</div>
+                <div class="mb-2"><span class="fw-semibold">Website:</span> {{ profile.website || '—' }}</div>
+                <div class="mb-2"><span class="fw-semibold">Approval Status:</span>
+                  <span :class="badgeClass(profile.approval_status)">{{ profile.approval_status }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </template>
+
+  <template id="tpl-student-dashboard">
+    <div>
+      <!-- Tab bar -->
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3 class="mb-0">Student Dashboard</h3>
+        <div class="btn-group btn-group-sm">
+          <button :class="['btn', studentTab==='drives' ? 'btn-dark' : 'btn-outline-dark']" @click="studentTab='drives'">Open Drives</button>
+          <button :class="['btn', studentTab==='applications' ? 'btn-dark' : 'btn-outline-dark']" @click="studentTab='applications'">My Applications</button>
+          <button :class="['btn', studentTab==='history' ? 'btn-dark' : 'btn-outline-dark']" @click="studentTab='history'">History</button>
+          <button :class="['btn', studentTab==='profile' ? 'btn-dark' : 'btn-outline-dark']" @click="loadProfile">Profile</button>
+        </div>
+      </div>
+
+      <!-- Open Drives tab -->
+      <div v-if="studentTab==='drives'">
+        <div class="row g-2 mb-3">
+          <div class="col-md-4">
+            <input v-model="branchFilter" class="form-control form-control-sm" placeholder="Filter by branch (e.g. CS, ECE)">
+          </div>
+          <div class="col-auto">
+            <button class="btn btn-sm btn-primary" @click="filterDrives">Search</button>
+            <button class="btn btn-sm btn-outline-secondary ms-1" @click="branchFilter=''; filterDrives()">Clear</button>
+          </div>
+        </div>
+        <div class="text-danger small mb-2" v-if="applyError">{{ applyError }}</div>
+        <div class="card">
+          <div class="card-body p-0">
+            <table class="table table-sm mb-0">
+              <thead><tr><th>Title</th><th>Company</th><th>Branch</th><th>Min CGPA</th><th>Deadline</th><th>Applicants</th><th class="text-end">Action</th></tr></thead>
+              <tbody>
+                <tr v-for="d in drives" :key="d.id">
+                  <td>{{ d.job_title }}</td>
+                  <td>{{ d.company_name }}</td>
+                  <td class="text-muted small">{{ d.eligibility_branch || 'All' }}</td>
+                  <td>{{ d.eligibility_cgpa || '—' }}</td>
+                  <td class="text-muted small">{{ d.application_deadline ? d.application_deadline.slice(0,10) : '—' }}</td>
+                  <td><span class="badge bg-secondary">{{ d.applicant_count ?? 0 }}</span></td>
+                  <td class="text-end">
+                    <button class="btn btn-sm btn-primary" :disabled="appliedDriveIds.has(d.id)" @click="apply(d.id)">
+                      {{ appliedDriveIds.has(d.id) ? '✓ Applied' : 'Apply' }}
+                    </button>
+                  </td>
+                </tr>
+                <tr v-if="!drives.length"><td colspan="7" class="text-center text-muted py-3">No open drives right now.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- My Applications tab -->
+      <div v-if="studentTab==='applications'">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <h5 class="mb-0">Active Applications</h5>
+          <button class="btn btn-sm btn-outline-secondary" @click="exportCsv" :disabled="exportLoading">
+            {{ exportLoading ? 'Exporting...' : 'Export CSV' }}
+          </button>
+        </div>
+        <div class="alert alert-info small" v-if="exportMsg">{{ exportMsg }}</div>
+        <div class="card">
+          <div class="card-body p-0">
+            <table class="table table-sm mb-0">
+              <thead><tr><th>Company</th><th>Drive</th><th>Status</th><th>Applied</th><th>Interview</th></tr></thead>
+              <tbody>
+                <tr v-for="a in activeApplications" :key="a.id">
+                  <td>{{ a.company_name }}</td>
+                  <td>{{ a.job_title }}</td>
+                  <td><span :class="badgeClass(a.status)">{{ a.status }}</span></td>
+                  <td class="text-muted small">{{ a.applied_at?.slice(0,10) }}</td>
+                  <td class="text-muted small">{{ a.interview_date ? a.interview_date.slice(0,10) : '—' }}</td>
+                </tr>
+                <tr v-if="!activeApplications.length"><td colspan="5" class="text-center text-muted py-3">No active applications.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Placement History tab -->
+      <div v-if="studentTab==='history'">
+        <h5 class="mb-2">Placement History</h5>
+        <div class="card">
+          <div class="card-body p-0">
+            <table class="table table-sm mb-0">
+              <thead><tr><th>Company</th><th>Drive</th><th>Final Status</th><th>Applied</th><th class="text-end">Action</th></tr></thead>
+              <tbody>
+                <tr v-for="a in placementHistory" :key="a.id">
+                  <td>{{ a.company_name }}</td>
+                  <td>{{ a.job_title }}</td>
+                  <td><span :class="badgeClass(a.status)">{{ a.status }}</span></td>
+                  <td class="text-muted small">{{ a.applied_at?.slice(0,10) }}</td>
+                  <td class="text-end">
+                    <a v-if="a.status==='selected'" :href="`/api/student/applications/${a.id}/offer-letter`" target="_blank" class="btn btn-sm btn-success">
+                      📄 Offer Letter
+                    </a>
+                    <span v-else class="text-muted small">—</span>
+                  </td>
+                </tr>
+                <tr v-if="!placementHistory.length"><td colspan="5" class="text-center text-muted py-3">No completed placements yet.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Profile tab -->
+      <div v-if="studentTab==='profile'">
+        <div class="row g-4">
+          <div class="col-md-6">
+            <div class="card">
+              <div class="card-header fw-semibold">Edit Profile</div>
+              <div class="card-body">
+                <form @submit.prevent="saveProfile">
+                  <div class="mb-2"><label class="form-label small">Full Name</label>
+                    <input v-model="profileForm.name" class="form-control" required>
+                  </div>
+                  <div class="mb-2"><label class="form-label small">Branch</label>
+                    <input v-model="profileForm.branch" class="form-control" placeholder="e.g. CS">
+                  </div>
+                  <div class="mb-2"><label class="form-label small">CGPA</label>
+                    <input v-model.number="profileForm.cgpa" type="number" step="0.01" min="0" max="10" class="form-control" placeholder="e.g. 8.5">
+                  </div>
+                  <div class="mb-3"><label class="form-label small">Year</label>
+                    <input v-model.number="profileForm.year" type="number" min="1" max="5" class="form-control" placeholder="e.g. 3">
+                  </div>
+                  <div class="text-danger small mb-2" v-if="profileError">{{ profileError }}</div>
+                  <div class="text-success small mb-2" v-if="profileMsg">{{ profileMsg }}</div>
+                  <button class="btn btn-primary" type="submit">Save Changes</button>
+                </form>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="card">
+              <div class="card-header fw-semibold">Resume Upload</div>
+              <div class="card-body">
+                <p class="small text-muted">Accepted formats: PDF, DOC, DOCX (max 5 MB)</p>
+                <p class="small" v-if="profileForm.resume_path">
+                  Current resume: <strong>{{ profileForm.resume_path }}</strong>
+                </p>
+                <form @submit.prevent="uploadResume">
+                  <div class="mb-3">
+                    <input type="file" class="form-control" accept=".pdf,.doc,.docx" ref="resumeFile" required>
+                  </div>
+                  <div class="text-danger small mb-2" v-if="resumeError">{{ resumeError }}</div>
+                  <div class="text-success small mb-2" v-if="resumeMsg">{{ resumeMsg }}</div>
+                  <button class="btn btn-primary" type="submit">Upload Resume</button>
+                </form>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </template>
+
+  {% endraw %}
+
+  <script src="{{ url_for('static', filename='js/api.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

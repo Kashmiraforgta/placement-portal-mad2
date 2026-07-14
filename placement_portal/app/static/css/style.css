@@ -1,0 +1,31 @@
+body {
+  background-color: #f4f5f7;
+}
+
+.card {
+  border-radius: 0.6rem;
+  border: 1px solid #eaeaea;
+}
+
+.card-header {
+  background-color: #fff;
+  border-bottom: 1px solid #eee;
+}
+
+/* full-height centered wrapper for login/register */
+.auth-wrapper {
+  min-height: calc(100vh - 0px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 380px;
+}
+
+.table > :not(caption) > * > * {
+  vertical-align: middle;
+}
