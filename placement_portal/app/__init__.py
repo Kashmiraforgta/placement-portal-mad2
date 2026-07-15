@@ -41,6 +41,7 @@ def create_app(config_class=Config):
 
     with app.app_context():
         db.create_all()
+        auto_migrate()
         seed_admin(app)
 
     return app
@@ -58,6 +59,44 @@ def seed_admin(app):
         db.session.add(admin)
         db.session.commit()
         print(f"[seed] Admin created -> {app.config['ADMIN_EMAIL']} / {app.config['ADMIN_PASSWORD']}")
+
+
+def auto_migrate():
+    """
+    Lightweight schema migration: add any columns that exist in SQLAlchemy
+    models but are missing from the actual SQLite tables.
+    Uses raw PRAGMA — no Flask-Migrate needed.
+    """
+    from sqlalchemy import text
+
+    # Map: table_name -> [(column_name, column_definition), ...]
+    migrations = {
+        "applications": [
+            ("interview_date", "DATETIME"),
+        ],
+        "students": [
+            ("resume_path", "VARCHAR(255)"),
+        ],
+        "drives": [
+            ("eligibility_year", "INTEGER"),
+            ("eligibility_cgpa", "FLOAT"),
+        ],
+    }
+
+    with db.engine.connect() as conn:
+        for table, columns in migrations.items():
+            # Get existing columns for this table
+            result = conn.execute(text(f"PRAGMA table_info({table})"))
+            existing = {row[1] for row in result.fetchall()}  # row[1] = column name
+
+            for col_name, col_type in columns:
+                if col_name not in existing:
+                    conn.execute(text(
+                        f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}"
+                    ))
+                    print(f"[migrate] Added column {table}.{col_name}")
+
+        conn.commit()
 
 
 def make_celery(app):

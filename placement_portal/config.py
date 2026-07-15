@@ -28,14 +28,18 @@ class Config:
     ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
 
     # --- Email (SMTP) ---
-    # To enable real email: set these env vars before running the app.
-    # Example for Gmail:
+    # Default: MailHog (local dev mail catcher, no auth needed).
+    # Download: https://github.com/mailhog/MailHog/releases
+    # Run:      MailHog.exe           (Windows)
+    # Web UI:   http://localhost:8025
+    #
+    # For real email (e.g. Gmail), override with env vars:
     #   MAIL_SERVER=smtp.gmail.com  MAIL_PORT=587
-    #   MAIL_USERNAME=your@gmail.com  MAIL_PASSWORD=your_app_password
-    #   MAIL_SENDER=your@gmail.com
-    # If MAIL_SERVER is not set, emails fall back to console printing (dev mode).
-    MAIL_SERVER = os.environ.get("MAIL_SERVER")          # e.g. smtp.gmail.com
-    MAIL_PORT = int(os.environ.get("MAIL_PORT", 587))
-    MAIL_USERNAME = os.environ.get("MAIL_USERNAME")
-    MAIL_PASSWORD = os.environ.get("MAIL_PASSWORD")
-    MAIL_SENDER = os.environ.get("MAIL_SENDER", os.environ.get("MAIL_USERNAME"))
+    #   MAIL_USERNAME=you@gmail.com  MAIL_PASSWORD=app_password
+    #   MAIL_USE_TLS=true
+    MAIL_SERVER   = os.environ.get("MAIL_SERVER",   "localhost")
+    MAIL_PORT     = int(os.environ.get("MAIL_PORT", 1025))       # MailHog SMTP port
+    MAIL_USE_TLS  = os.environ.get("MAIL_USE_TLS",  "false").lower() == "true"
+    MAIL_USERNAME = os.environ.get("MAIL_USERNAME", None)        # not needed for MailHog
+    MAIL_PASSWORD = os.environ.get("MAIL_PASSWORD", None)        # not needed for MailHog
+    MAIL_SENDER   = os.environ.get("MAIL_SENDER",   "noreply@placement.portal")

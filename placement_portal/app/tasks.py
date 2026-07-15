@@ -15,36 +15,39 @@ from app.models import Student, Drive, Application, User
 # ---------------------------------------------------------------------------
 def _send_email(to_addr: str, subject: str, html_body: str):
     """
-    Send an email via SMTP. Reads config from the Flask app context.
-    Set MAIL_SERVER, MAIL_PORT, MAIL_USERNAME, MAIL_PASSWORD in config.py.
-    Falls back to printing if MAIL_SERVER is not configured.
+    Send an email via SMTP.
+
+    Default config points at MailHog (localhost:1025, no auth, no TLS).
+    Works with any SMTP server — set MAIL_USE_TLS=true and credentials
+    for real providers like Gmail.
     """
     from flask import current_app
-    mail_server = current_app.config.get("MAIL_SERVER")
-    mail_port = current_app.config.get("MAIL_PORT", 587)
+    mail_server  = current_app.config.get("MAIL_SERVER", "localhost")
+    mail_port    = int(current_app.config.get("MAIL_PORT", 1025))
+    use_tls      = current_app.config.get("MAIL_USE_TLS", False)
     mail_username = current_app.config.get("MAIL_USERNAME")
     mail_password = current_app.config.get("MAIL_PASSWORD")
-    mail_sender = current_app.config.get("MAIL_SENDER", mail_username)
-
-    if not mail_server or not mail_username:
-        # Fallback: just log — useful during development
-        print(f"[email] To: {to_addr} | Subject: {subject}\n{html_body}")
-        return
+    mail_sender  = current_app.config.get("MAIL_SENDER", "noreply@placement.portal")
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
-    msg["From"] = mail_sender
-    msg["To"] = to_addr
+    msg["From"]    = mail_sender
+    msg["To"]      = to_addr
     msg.attach(MIMEText(html_body, "html"))
 
     try:
         with smtplib.SMTP(mail_server, mail_port) as server:
             server.ehlo()
-            server.starttls()
-            server.login(mail_username, mail_password)
+            if use_tls:
+                server.starttls()
+            if mail_username and mail_password:
+                server.login(mail_username, mail_password)
             server.sendmail(mail_sender, to_addr, msg.as_string())
+        print(f"[email] Sent to {to_addr} | Subject: {subject}")
     except Exception as e:
+        # Fall back to console so the task doesn't crash
         print(f"[email error] Failed to send to {to_addr}: {e}")
+        print(f"[email fallback] To: {to_addr} | Subject: {subject}\n{html_body}")
 
 
 # ---------------------------------------------------------------------------

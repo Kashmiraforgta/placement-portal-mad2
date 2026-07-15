@@ -42,13 +42,22 @@ def drives():
 
     data = request.get_json(force=True)
     deadline = data.get("application_deadline")
+
+    # Vue's v-model.number sends "" when a number field is left blank,
+    # not null — sanitize before passing to Float/Integer columns.
+    cgpa = data.get("eligibility_cgpa")
+    cgpa = float(cgpa) if cgpa not in (None, "") else 0.0
+
+    year = data.get("eligibility_year")
+    year = int(year) if year not in (None, "") else None
+
     drive = Drive(
         company_id=company.id,
         job_title=data.get("job_title"),
         job_description=data.get("job_description"),
-        eligibility_branch=data.get("eligibility_branch"),
-        eligibility_cgpa=data.get("eligibility_cgpa", 0),
-        eligibility_year=data.get("eligibility_year"),
+        eligibility_branch=data.get("eligibility_branch") or None,
+        eligibility_cgpa=cgpa,
+        eligibility_year=year,
         application_deadline=datetime.fromisoformat(deadline) if deadline else None,
         status="pending",  # goes live only after admin approval
     )
